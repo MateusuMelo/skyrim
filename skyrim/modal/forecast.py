@@ -19,7 +19,7 @@ if not CDSAPI_KEY or not CDSAPI_URL:
 yesterday = (datetime.now() - timedelta(days=1)).date().isoformat().replace("-", "")
 
 image = (
-    Image.from_registry("nvcr.io/nvidia/modulus/modulus:23.11")
+    Image.from_registry("nvcr.io/nvidia/pytorch:24.01-py3")
     .run_commands(
         "git clone https://github.com/secondlaw-ai/skyrim",
         force_build=(MODAL_ENV != "prod"),
