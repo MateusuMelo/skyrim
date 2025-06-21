@@ -126,7 +126,7 @@ def save_forecast(
     target = p.scheme or "local"
     if target and (not requested_file_type):
         # for all remote targets, default support zarr
-        config.file_type = "zarr"
+        config.file_type = "netcdf"
 
     pred = config.mapping_func(pred)
     pred = pred[config.filter_vars] if len(config.filter_vars) else pred
@@ -147,7 +147,7 @@ def save_forecast(
             if Path(output_path).exists():
                 pred.to_zarr(
                     output_path,
-                    append_dim="step",
+                    append_dim="time",
                     mode="a",
                     consolidated=True,
                 )
