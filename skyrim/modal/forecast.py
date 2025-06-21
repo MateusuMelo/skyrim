@@ -21,12 +21,46 @@ yesterday = (datetime.now() - timedelta(days=1)).date().isoformat().replace("-",
 image = (
     Image.from_registry("nvcr.io/nvidia/pytorch:24.01-py3")
     .run_commands(
-        "git clone https://github.com/secondlaw-ai/skyrim",
+        "git clone https://github.com/MateusuMelo/skyrim",
         force_build=(MODAL_ENV != "prod"),
     )
     .workdir("/skyrim")
     .run_commands("pip install .")
     .run_commands("pip install -r requirements.txt")
+    .run_commands(
+        "pip install protobuf==3.20.*",
+        "pip install jax==0.4.23 jaxlib==0.4.23 git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
+    )
+    .run_commands("pip install ngcsdk==3.55.0")
+    .run_commands("pip install tblib")
+
+    # Update and install prerequisites
+    .run_commands("apt-get update && apt-get install -y --no-install-recommends wget gnupg")
+
+    # Download cuDNN package
+    .run_commands(
+        "wget https://developer.download.nvidia.com/compute/cudnn/9.0.0/local_installers/cudnn-local-repo-ubuntu2204-9.0.0_1.0-1_amd64.deb -O cudnn.deb")
+
+    # Install cuDNN repository
+    .run_commands("dpkg -i cudnn.deb")
+
+    # Add GPG key
+    .run_commands("cp /var/cudnn-local-repo-ubuntu2204-9.0.0/cudnn-local-960825AE-keyring.gpg /usr/share/keyrings/")
+
+    # Update package lists
+    .run_commands("apt-get update")
+
+    # Install cuDNN packages
+    .run_commands("apt-get install -y --no-install-recommends libcudnn9-cuda-12 libcudnn9-dev-cuda-12")
+
+    # Clean up
+    .run_commands("rm cudnn.deb")
+    .env({"LD_LIBRARY_PATH": "/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:/usr/local/nvidia/lib64"})
+    .run_commands(
+        "pip uninstall -y onnxruntime",
+        "pip install onnxruntime-gpu"
+    )
+    .pip_install("imageio")
     .env(
         {
             "CDSAPI_KEY": CDSAPI_KEY,
@@ -42,9 +76,9 @@ vol = Volume.from_name("forecasts", create_if_missing=True)
 
 
 @app.function(
-    gpu=gpu.A100(),
-    container_idle_timeout=240 * 2,
-    timeout=60 * 15,
+    gpu="A100-40GB",
+    scaledown_window=240 * 2,
+    timeout=60 * 30,
     image=image,
     volumes={VOLUME_PATH: vol},
 )
@@ -74,7 +108,7 @@ analysis_image = (
 
 @app.function(
     volumes={VOLUME_PATH: vol},
-    image=analysis_image,
+    image=image,
     timeout=60 * 60 * 2,  # 2 hour timeout
     memory=(2048, 4096),  # no need more than 4GB
 )
@@ -102,14 +136,14 @@ def run_analysis():
 
 @app.local_entrypoint()
 def main(
-    model_name: str = "pangu",
-    date: str = yesterday,
-    time: str = "0000",
-    lead_time: int = 6,
-    list_models: bool = False,
-    initial_conditions: str = "gfs",
-    output_dir: str = VOLUME_PATH,
-    filter_vars: str = "",
+        model_name: str = "pangu",
+        date: str = yesterday,
+        time: str = "0000",
+        lead_time: int = 72,
+        list_models: bool = False,
+        initial_conditions: str = "gfs",
+        output_dir: str = VOLUME_PATH,
+        filter_vars: str = "",
 ):
     """
     Run weather forecast inference using specified model and initial conditions.
