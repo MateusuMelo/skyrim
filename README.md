@@ -42,7 +42,7 @@ Clone the repo, set an env (either conda or venv) and then run
 ```bash
 git clone https://github.com/secondlaw-ai/skyrim.git
 cd skyrim
-pip install .
+conda env create -f environment.yml
 ```
 
 Depending on your use-case (i.e. AWS storage needs or CDS initial conditions), you may need to fill in a `.env` by `cp .env.example .env`.
