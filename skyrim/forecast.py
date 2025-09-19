@@ -17,14 +17,14 @@ load_dotenv()
 
 
 def run_forecast(
-    model_name: str,
-    date: str,
-    time: str,
-    lead_time: int,
-    list_models: bool,
-    initial_conditions: str,
-    output_dir: str,
-    filter_vars: str,
+        model_name: str,
+        date: str,
+        time: str,
+        lead_time: int,
+        list_models: bool,
+        initial_conditions: str,
+        output_dir: str,
+        filter_vars: str,
 ):
     # for the local inference setup you need core packages imported here:
     from skyrim.core import Skyrim
@@ -100,15 +100,15 @@ def run_forecast(
     help="If set, will run on modal.",
 )
 def main(
-    model_name: str,
-    date: str,
-    time: str,
-    lead_time: int,
-    list_models: bool,
-    initial_conditions: str,
-    output_dir: str,
-    filter_vars: str,
-    modal: bool,
+        model_name: str,
+        date: str,
+        time: str,
+        lead_time: int,
+        list_models: bool,
+        initial_conditions: str,
+        output_dir: str,
+        filter_vars: str,
+        modal: bool,
 ):
     if modal:
         return subprocess.run(

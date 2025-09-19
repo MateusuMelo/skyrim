@@ -27,10 +27,17 @@ image = (
     .workdir("/skyrim")
     .run_commands("pip install .")
     .run_commands("pip install -r requirements.txt")
+    # .run_commands(
+    #     "pip install protobuf==3.20.*",
+    #     "pip install jax==0.4.23 jaxlib==0.4.23 git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
+    # )
     .run_commands(
         "pip install protobuf==3.20.*",
-        "pip install jax==0.4.23 jaxlib==0.4.23 git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
+        "pip install jax==0.4.23",
+        "pip install --upgrade jaxlib==0.4.23+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
+        "pip install git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
     )
+
     .run_commands("pip install ngcsdk==3.55.0")
     .run_commands("pip install tblib")
 
@@ -137,11 +144,11 @@ def run_analysis():
 @app.local_entrypoint()
 def main(
         model_name: str = "pangu",
-        date: str = yesterday,
+        date: str = 20250710,
         time: str = "0000",
-        lead_time: int = 72,
+        lead_time: int = 432,
         list_models: bool = False,
-        initial_conditions: str = "gfs",
+        initial_conditions: str = "cds",
         output_dir: str = VOLUME_PATH,
         filter_vars: str = "",
 ):
@@ -161,6 +168,7 @@ def main(
     Example:
         Run a forecast for 2024-04-20 with a 12-hour lead time using the Pangu model:
         `modal run modal/forecast.py --model pangu --lead-time 12 --date 20240420`
+        #['pangu', 'fourcastnet', 'fourcastnet_v2', 'dlwp', 'graphcast', 'fuxi', 'fengwu']
 
     Note:
         Forecasts typically generate about 2GB of data. Storage costs can be checked at https://modal.com/pricing.
