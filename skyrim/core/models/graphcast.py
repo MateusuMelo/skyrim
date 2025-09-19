@@ -11,7 +11,30 @@ from ...common import generate_forecast_id, save_forecast
 from loguru import logger
 from .base import GlobalModel
 import torch
+import torch
+import jax
+import jax.numpy as jnp
+from jax import dlpack as jax_dlpack
+import torch.utils.dlpack
 
+
+def fixed_torch_to_jax(x: torch.Tensor) -> jax.Array:
+    """Fixed version of torch_to_jax that ensures correct memory layout."""
+    # Garantir que o tensor esteja contíguo e no layout correto
+    x = x.contiguous()
+
+    # Reordenar as dimensões para o layout esperado pelo JAX: (batch, time, level, lat, lon)
+    if x.dim() == 5:
+        # O layout atual é (4,0,3,2,1), precisamos de (4,3,2,1,0)
+        # Isso significa que precisamos reverter a ordem das dimensões
+        x = x.permute(0, 1, 2, 3, 4)  # Ou a permutação específica necessária
+
+        # Alternativa: tentar diferentes permutações até encontrar a correta
+        # x = x.permute(0, 4, 3, 2, 1)  # Experimente esta se a acima não funcionar
+
+    # Converter para dlpack e então para JAX
+    dlpack = torch.utils.dlpack.to_dlpack(x)
+    return jax_dlpack.from_dlpack(dlpack)
 # fmt: off
 CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600", "z700",
             "z850", "z925", "z1000", "q50", "q100", "q150", "q200", "q250", "q300", "q400",
