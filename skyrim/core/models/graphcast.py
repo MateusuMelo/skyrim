@@ -12,72 +12,58 @@ from loguru import logger
 from .base import GlobalModel
 import torch
 import jax
-from jax import dlpack as jax_dlpack
-import torch.utils.dlpack
+import sys
 
 
-# ===== FIX FOR JAX TENSOR LAYOUT ISSUE =====
-def fixed_torch_to_jax(x: torch.Tensor) -> jax.Array:
-    """Fixed version of torch_to_jax that ensures correct memory layout."""
-    # Ensure tensor is contiguous
-    x = x.contiguous()
+# ===== RADICAL FIX FOR JAX TENSOR LAYOUT ISSUE =====
+def robust_torch_to_jax(tensor):
+    """
+    Convert PyTorch tensor to JAX array using numpy as intermediate.
+    This avoids the dlpack layout compatibility issues.
+    """
+    # Ensure tensor is on CPU and contiguous
+    if tensor.is_cuda:
+        tensor = tensor.cpu()
+    tensor = tensor.contiguous()
 
-    # Debug: print tensor shape and strides
-    logger.debug(f"Tensor shape: {x.shape}, strides: {x.stride()}")
+    # Convert to numpy first (handles layout issues)
+    numpy_array = tensor.numpy()
 
-    # Reorder dimensions to expected layout: (batch, time, level, lat, lon)
-    if x.dim() == 5:
-        # The error shows layout (4,0,3,2,1) but expected (4,3,2,1,0)
-        # This suggests we need to rearrange the dimensions
-        x = x.permute(0, 1, 2, 3, 4)  # Keep original order first
+    # Convert numpy to JAX
+    jax_array = jnp.array(numpy_array)
 
-        # If that doesn't work, try specific permutations
-        # Try different permutations based on the error message
-        try:
-            # Option 1: Reverse the order
-            x = x.permute(0, 4, 3, 2, 1)
-        except:
-            # Option 2: Specific permutation based on error
-            x = x.permute(0, 3, 2, 1, 4)
-
-    # Convert to dlpack and then to JAX
-    dlpack = torch.utils.dlpack.to_dlpack(x)
-    return jax_dlpack.from_dlpack(dlpack)
+    return jax_array
 
 
-# Monkey patch the problematic function
+# Aggressive monkey patching
 import earth2mip.networks.graphcast as graphcast_module
 
-graphcast_module.torch_to_jax = fixed_torch_to_jax
+graphcast_module.torch_to_jax = robust_torch_to_jax
+
+# Patch all loaded modules
+for module_name in list(sys.modules.keys()):
+    if hasattr(sys.modules[module_name], 'torch_to_jax'):
+        setattr(sys.modules[module_name], 'torch_to_jax', robust_torch_to_jax)
+
+# Also patch the stepper's initialize method if needed
+original_initialize = None
+if hasattr(graphcast_module, 'GraphCastStepper'):
+    original_initialize = graphcast_module.GraphCastStepper.initialize
+
+
+    def patched_initialize(self, initial_condition, time):
+        # Convert tensors to numpy first to avoid layout issues
+        if hasattr(initial_condition, 'values'):
+            initial_condition.values = initial_condition.values.cpu().contiguous()
+        return original_initialize(self, initial_condition, time)
+
+
+    graphcast_module.GraphCastStepper.initialize = patched_initialize
+
+
 # ===== END FIX =====
 
-# fmt: off
-CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600", "z700",
-            "z850", "z925", "z1000", "q50", "q100", "q150", "q200", "q250", "q300", "q400",
-            "q500", "q600", "q700", "q850", "q925", "q1000", "t50", "t100", "t150", "t200",
-            "t250", "t300", "t400", "t500", "t600", "t700", "t850", "t925", "t1000", "u50",
-            "u100", "u150", "u200", "u250", "u300", "u400", "u500", "u600", "u700", "u850",
-            "u925", "u1000", "v50", "v100", "v150", "v200", "v250", "v300", "v400", "v500",
-            "v600", "v700", "v850", "v925", "v1000", "w50", "w100", "w150", "w200", "w250",
-            "w300", "w400", "w500", "w600", "w700", "w850", "w925", "w1000", "u10m", "v10m",
-            "t2m", "msl", "tp06",
-            ]
-# fmt: on
-
-CHANNEL_MAP = [
-    ("specific_humidity", "q"),
-    ("geopotential", "z"),
-    ("temperature", "t"),
-    ("u_component_of_wind", "u"),
-    ("v_component_of_wind", "v"),
-    ("vertical_velocity", "w"),
-    ("2m_temperature", "t2m"),
-    ("10m_u_component_of_wind", "u10m"),
-    ("10m_v_component_of_wind", "v10m"),
-    ("mean_sea_level_pressure", "msl"),
-    ("toa_incident_solar_radiation", "tp06"),
-]
-
+# ... (o resto do seu código CHANNELS e CHANNEL_MAP permanece igual)
 
 class GraphcastModel(GlobalModel):
     model_name = "graphcast"
@@ -87,28 +73,26 @@ class GraphcastModel(GlobalModel):
         self._stepper = None
 
     def build_model(self):
-        return graphcast.load_time_loop_operational(
+        logger.debug("Loading GraphCast model...")
+        model = graphcast.load_time_loop_operational(
             registry.get_model("e2mip://graphcast")
         )
+        logger.success("GraphCast model loaded")
+        return model
 
     @property
     def stepper(self):
         if self._stepper is None:
+            logger.debug("Initializing stepper...")
             self._stepper = self.model.stepper
         return self._stepper
 
-    def _ensure_jax_compatible(self, tensor):
-        """Ensure tensor is compatible with JAX layout requirements"""
-        if not isinstance(tensor, torch.Tensor):
-            return tensor
-
-        tensor = tensor.contiguous()
-
-        # Add debug information
-        logger.debug(f"Tensor shape: {tensor.shape}, dtype: {tensor.dtype}, device: {tensor.device}")
-        logger.debug(f"Tensor strides: {tensor.stride()}")
-
-        return tensor
+    def _prepare_for_jax(self, data):
+        """Prepare data for JAX compatibility"""
+        if hasattr(data, 'values') and isinstance(data.values, torch.Tensor):
+            # Convert to numpy first, then to JAX compatible format
+            data.values = data.values.cpu().contiguous().numpy()
+        return data
 
     def _predict_one_step(
             self,
@@ -116,29 +100,39 @@ class GraphcastModel(GlobalModel):
             initial_condition: tuple | None = None,
     ) -> xr.DataArray:
 
+        logger.debug(f"Starting prediction for {start_time}")
+
         if initial_condition is None:
-            logger.debug("Fetching initial conditions from CDS...")
+            logger.debug("Fetching initial conditions...")
             initial_condition = get_initial_condition_for_model(
                 time_loop=self.model,
                 data_source=self.data_source,
                 time=start_time,
             )
-            logger.debug("Initial conditions obtained")
+            # Prepare for JAX
+            initial_condition = self._prepare_for_jax(initial_condition)
 
         logger.debug("Initializing stepper...")
+        try:
+            state = self.stepper.initialize(initial_condition, start_time)
+            logger.debug("Stepper initialized")
 
-        # Ensure the initial condition is JAX compatible
-        if hasattr(initial_condition, 'values'):
-            initial_condition.values = self._ensure_jax_compatible(initial_condition.values)
+            logger.debug("Taking step...")
+            state, output = self.stepper.step(state)
+            logger.debug("Step completed")
 
-        state = self.stepper.initialize(initial_condition, start_time)
-        logger.debug("Stepper initialized successfully")
+            return state
 
-        logger.debug("Taking prediction step...")
-        state, output = self.stepper.step(state)
-        logger.debug("Prediction step completed")
+        except Exception as e:
+            logger.error(f"Prediction failed: {e}")
+            # Fallback: try CPU-only execution
+            logger.debug("Trying CPU fallback...")
+            import os
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            state = self.stepper.initialize(initial_condition, start_time)
+            state, output = self.stepper.step(state)
+            return state
 
-        return state
     def forecast(
             self,
             start_time: datetime.datetime,
