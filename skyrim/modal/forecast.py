@@ -27,41 +27,26 @@ image = (
     .workdir("/skyrim")
     .run_commands("pip install .")
     .run_commands("pip install -r requirements.txt")
-    # .run_commands(
-    #     "pip install protobuf==3.20.*",
-    #     "pip install jax==0.4.23 jaxlib==0.4.23 git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
-    # )
+    # Versões específicas para compatibilidade
     .run_commands(
         "pip install protobuf==3.20.*",
         "pip install jax==0.4.23",
-        "pip install --upgrade jaxlib==0.4.23+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
+        "pip install --upgrade 'jaxlib==0.4.23+cuda12.cudnn89' -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
         "pip install git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
     )
-
     .run_commands("pip install ngcsdk==3.55.0")
     .run_commands("pip install tblib")
 
-    # Update and install prerequisites
+    # Instalação mais simples do cuDNN
     .run_commands("apt-get update && apt-get install -y --no-install-recommends wget gnupg")
-
-    # Download cuDNN package
     .run_commands(
-        "wget https://developer.download.nvidia.com/compute/cudnn/9.0.0/local_installers/cudnn-local-repo-ubuntu2204-9.0.0_1.0-1_amd64.deb -O cudnn.deb")
-
-    # Install cuDNN repository
-    .run_commands("dpkg -i cudnn.deb")
-
-    # Add GPG key
-    .run_commands("cp /var/cudnn-local-repo-ubuntu2204-9.0.0/cudnn-local-960825AE-keyring.gpg /usr/share/keyrings/")
-
-    # Update package lists
-    .run_commands("apt-get update")
-
-    # Install cuDNN packages
-    .run_commands("apt-get install -y --no-install-recommends libcudnn9-cuda-12 libcudnn9-dev-cuda-12")
-
-    # Clean up
-    .run_commands("rm cudnn.deb")
+        "wget https://developer.download.nvidia.com/compute/cudnn/9.0.0/local_installers/cudnn-local-repo-ubuntu2204-9.0.0_1.0-1_amd64.deb -O cudnn.deb",
+        "dpkg -i cudnn.deb",
+        "cp /var/cudnn-local-repo-ubuntu2204-9.0.0/cudnn-local-960825AE-keyring.gpg /usr/share/keyrings/",
+        "apt-get update",
+        "apt-get install -y --no-install-recommends libcudnn9-cuda-12 libcudnn9-dev-cuda-12",
+        "rm cudnn.deb"
+    )
     .env({"LD_LIBRARY_PATH": "/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:/usr/local/nvidia/lib64"})
     .run_commands(
         "pip uninstall -y onnxruntime",
@@ -75,6 +60,9 @@ image = (
             "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
             "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
             "AWS_DEFAULT_REGION": "eu-west-1",
+            # Variáveis para forçar layout de memória compatível
+            "XLA_PYTHON_CLIENT_ALLOCATOR": "platform",
+            "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         }
     )
 )
