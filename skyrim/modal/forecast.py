@@ -19,40 +19,43 @@ if not CDSAPI_KEY or not CDSAPI_URL:
 yesterday = (datetime.now() - timedelta(days=1)).date().isoformat().replace("-", "")
 
 image = (
-    Image.from_registry("nvcr.io/nvidia/pytorch:24.01-py3")
+    Image.from_registry("nvcr.io/nvidia/pytorch:24.10-py3")
+
+    # 🔹 Checar versões antes de instalar nada
+    .run_commands(
+        "echo '===== VERSÕES ANTES ====='",
+        "python -c 'import torch; print(\"torch:\", torch.__version__)'",
+        "python -c 'import pkg_resources; print(\"transformer_engine:\", pkg_resources.get_distribution(\"transformer-engine\").version)'"
+    )
+
+    # 2️⃣ Clonar e instalar Skyrim
     .run_commands(
         "git clone https://github.com/MateusuMelo/skyrim",
         force_build=(MODAL_ENV != "prod"),
     )
     .workdir("/skyrim")
     .run_commands("pip install .")
-    .run_commands("pip install -r requirements.txt")
-    # Versões específicas para compatibilidade
+    .run_commands(
+        "pip install --upgrade-strategy only-if-needed git+https://github.com/secondlaw-ai/earth2mip.git@930116c5ca514319cb066de69aa5640cbaacaa35#egg=earth2mip[pangu,graphcast]"
+    )
+    .run_commands(
+        "pip install --upgrade-strategy only-if-needed git+https://github.com/secondlaw-ai/earth2studio.git@219a0fcb1512c5f407e064920d985191807c8ef4#egg=earth2studio[all]"
+    )
+
+    # 🔹 Checar versões depois da instalação
+
+    .run_commands(
+        "echo '===== VERSÕES Depois ====='",
+        "python -c 'import torch; print(\"torch:\", torch.__version__)'",
+        "python -c 'import pkg_resources; print(\"transformer_engine:\", pkg_resources.get_distribution(\"transformer-engine\").version)'"
+    )
     .run_commands(
         "pip install protobuf==3.20.*",
         "pip install jax==0.4.23",
-        "pip install --upgrade 'jaxlib==0.4.23+cuda12.cudnn89' -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
+        "pip install --upgrade jaxlib==0.4.23+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
         "pip install git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
     )
-    .run_commands("pip install ngcsdk==3.55.0")
-    .run_commands("pip install tblib")
 
-    # Instalação mais simples do cuDNN
-    .run_commands("apt-get update && apt-get install -y --no-install-recommends wget gnupg")
-    .run_commands(
-        "wget https://developer.download.nvidia.com/compute/cudnn/9.0.0/local_installers/cudnn-local-repo-ubuntu2204-9.0.0_1.0-1_amd64.deb -O cudnn.deb",
-        "dpkg -i cudnn.deb",
-        "cp /var/cudnn-local-repo-ubuntu2204-9.0.0/cudnn-local-960825AE-keyring.gpg /usr/share/keyrings/",
-        "apt-get update",
-        "apt-get install -y --no-install-recommends libcudnn9-cuda-12 libcudnn9-dev-cuda-12",
-        "rm cudnn.deb"
-    )
-    .env({"LD_LIBRARY_PATH": "/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:/usr/local/nvidia/lib64"})
-    .run_commands(
-        "pip uninstall -y onnxruntime",
-        "pip install onnxruntime-gpu"
-    )
-    .pip_install("imageio")
     .env(
         {
             "CDSAPI_KEY": CDSAPI_KEY,
@@ -60,9 +63,6 @@ image = (
             "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
             "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
             "AWS_DEFAULT_REGION": "eu-west-1",
-            # Variáveis para forçar layout de memória compatível
-            "XLA_PYTHON_CLIENT_ALLOCATOR": "platform",
-            "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         }
     )
 )

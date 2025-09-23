@@ -81,6 +81,11 @@ class GraphcastModel(GlobalModel):
         return model
 
     @property
+    def time_step(self):
+        """GraphCast uses fixed 6-hour timesteps"""
+        return datetime.timedelta(hours=6)
+
+    @property
     def stepper(self):
         if self._stepper is None:
             logger.debug("Initializing stepper...")
