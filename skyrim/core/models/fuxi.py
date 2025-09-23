@@ -117,19 +117,3 @@ class FuxiModel(GlobalModel):
         )
 
         return da.sel(channel=channels) if channels else da
-
-    def rollout(self, start_time: datetime.datetime, n_steps: int, channels: List[str] = None) -> tuple[
-        xr.DataArray, list[str]]:
-        """Perform a model rollout (forecast) starting from the given time."""
-        if channels is None:
-            channels = []
-
-        da = self.forecast(start_time, n_steps, channels)
-        return da, channels
-
-    def predict_one_step(self, start_time: datetime.datetime, channels: List[str] = None) -> xr.DataArray:
-        """Predict one time step forward."""
-        if channels is None:
-            channels = []
-
-        return self.forecast(start_time, n_steps=1, channels=channels)
