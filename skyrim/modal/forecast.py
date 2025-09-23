@@ -21,14 +21,6 @@ yesterday = (datetime.now() - timedelta(days=1)).date().isoformat().replace("-",
 image = (
     Image.from_registry("nvcr.io/nvidia/pytorch:24.10-py3")
 
-    # 🔹 Checar versões antes de instalar nada
-    .run_commands(
-        "echo '===== VERSÕES ANTES ====='",
-        "python -c 'import torch; print(\"torch:\", torch.__version__)'",
-        "python -c 'import pkg_resources; print(\"transformer_engine:\", pkg_resources.get_distribution(\"transformer-engine\").version)'"
-    )
-
-    # 2️⃣ Clonar e instalar Skyrim
     .run_commands(
         "git clone https://github.com/MateusuMelo/skyrim",
         force_build=(MODAL_ENV != "prod"),
@@ -42,20 +34,12 @@ image = (
         "pip install --upgrade-strategy only-if-needed git+https://github.com/secondlaw-ai/earth2studio.git@219a0fcb1512c5f407e064920d985191807c8ef4#egg=earth2studio[all]"
     )
 
-    # 🔹 Checar versões depois da instalação
-
-    .run_commands(
-        "echo '===== VERSÕES Depois ====='",
-        "python -c 'import torch; print(\"torch:\", torch.__version__)'",
-        "python -c 'import pkg_resources; print(\"transformer_engine:\", pkg_resources.get_distribution(\"transformer-engine\").version)'"
-    )
     .run_commands(
         "pip install protobuf==3.20.*",
         "pip install jax==0.4.23",
         "pip install --upgrade jaxlib==0.4.23+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html",
         "pip install git+https://github.com/deepmind/dm-haiku.git@v0.0.11",
     )
-
     .env(
         {
             "CDSAPI_KEY": CDSAPI_KEY,

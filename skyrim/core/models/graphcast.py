@@ -81,9 +81,25 @@ class GraphcastModel(GlobalModel):
         return model
 
     @property
+    @property
+    def device(self):
+        # GraphCast usa JAX, então o device é controlado pelo JAX
+        # Pode retornar string "cpu"/"gpu" ou até jax.devices()[0]
+        return str(self.model.device_array.device()) if hasattr(self.model, "device_array") else "jax"
+
+    @property
     def time_step(self):
-        """GraphCast uses fixed 6-hour timesteps"""
+        # GraphCast tem passo fixo de 6h
+        import datetime
         return datetime.timedelta(hours=6)
+
+    @property
+    def in_channel_names(self):
+        return self.model.in_channel_names
+
+    @property
+    def out_channel_names(self):
+        return self.model.out_channel_names
 
     @property
     def stepper(self):
