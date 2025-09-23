@@ -9,16 +9,17 @@ from earth2studio.io import XarrayBackend
 import earth2studio.run as run
 from .base import GlobalModel
 
-
 # fmt: off
 CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600", "z700",
             "z850", "z925", "z1000", "t50", "t100", "t150", "t200", "t250", "t300", "t400",
-            "t500", "t600", "t700", "t850", "t925", "t1000", "u50", "u100", "u150", "u200", 
+            "t500", "t600", "t700", "t850", "t925", "t1000", "u50", "u100", "u150", "u200",
             "u250", "u300", "u400", "u500", "u600", "u700", "u850", "u925", "u1000", "v50",
             "v100", "v150", "v200", "v250", "v300", "v400", "v500", "v600", "v700", "v850",
-            "v925", "v1000", "r50", "r100", "r150", "r200", "r250", "r300", "r400", "r500", 
-            "r600", "r700", "r850", "r925", "r1000", "t2m", "u10m", "v10m", "msl","tp"
+            "v925", "v1000", "r50", "r100", "r150", "r200", "r250", "r300", "r400", "r500",
+            "r600", "r700", "r850", "r925", "r1000", "t2m", "u10m", "v10m", "msl", "tp"
             ]
+
+
 # fmt: on
 
 
@@ -38,7 +39,7 @@ class FuxiModel(GlobalModel):
         ensemble mean (EM) in 15-day forecasts. FuXi surpasses the skillful forecast lead time achieved 
         by ECMWF HRES by extending the lead time for Z500 from 9.25 to 10.5 days and 
         for T2M from 10 to 14.5 days.
-    
+
     - https://github.com/tpys/FuXi
         The variable 'Z' represents geopotential and not geopotential height.
         The variable 'TP' represents total precipitation accumulated over a period of 6 hours.
@@ -68,18 +69,18 @@ class FuxiModel(GlobalModel):
     @property
     def in_channel_names(self):
         # TODO: add the input channel names
-        pass
+        return CHANNELS
 
     @property
     def out_channel_names(self):
         # TODO: add the output channel names
-        pass
+        return CHANNELS
 
     def forecast(
-        self,
-        start_time: datetime.datetime,
-        n_steps: int,
-        channels: List[str] = [],
+            self,
+            start_time: datetime.datetime,
+            n_steps: int,
+            channels: List[str] = [],
     ) -> xr.DataArray:
 
         io = XarrayBackend({})
@@ -117,8 +118,18 @@ class FuxiModel(GlobalModel):
 
         return da.sel(channel=channels) if channels else da
 
-    def rollout(self) -> tuple[xr.DataArray, list[str]]:
-        raise NotImplementedError
+    def rollout(self, start_time: datetime.datetime, n_steps: int, channels: List[str] = None) -> tuple[
+        xr.DataArray, list[str]]:
+        """Perform a model rollout (forecast) starting from the given time."""
+        if channels is None:
+            channels = []
 
-    def predict_one_step(self) -> xr.DataArray:
-        raise NotImplementedError
+        da = self.forecast(start_time, n_steps, channels)
+        return da, channels
+
+    def predict_one_step(self, start_time: datetime.datetime, channels: List[str] = None) -> xr.DataArray:
+        """Predict one time step forward."""
+        if channels is None:
+            channels = []
+
+        return self.forecast(start_time, n_steps=1, channels=channels)

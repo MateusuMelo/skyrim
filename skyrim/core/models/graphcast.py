@@ -204,3 +204,12 @@ class GraphcastModel(GlobalModel):
             start_time, source = pred_time, "file"
             logger.success(f"Rollout step {n + 1}/{n_steps} completed")
         return self._to_global_da(pred[1]).assign_coords(time=times[-2:]), output_paths
+
+    def _to_global_da(self, state_output):
+        import xarray as xr
+        if isinstance(state_output, xr.DataArray):
+            return state_output
+        if isinstance(state_output, xr.Dataset):
+            first_var = list(state_output.data_vars.keys())[0]
+            return state_output[first_var]
+        raise TypeError(f"Unsupported type: {type(state_output)}")
