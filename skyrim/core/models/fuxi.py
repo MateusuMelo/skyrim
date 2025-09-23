@@ -36,8 +36,8 @@ class FuxiModel(GlobalModel):
 
     - https://arxiv.org/abs/2306.12873
         The performance evaluation demonstrates that FuXi has forecast performance comparable to ECMWF
-        ensemble mean (EM) in 15-day forecasts. FuXi surpasses the skillful forecast lead time achieved 
-        by ECMWF HRES by extending the lead time for Z500 from 9.25 to 10.5 days and 
+        ensemble mean (EM) in 15-day forecasts. FuXi surpasses the skillful forecast lead time achieved
+        by ECMWF HRES by extending the lead time for Z500 from 9.25 to 10.5 days and
         for T2M from 10 to 14.5 days.
 
     - https://github.com/tpys/FuXi
@@ -69,12 +69,12 @@ class FuxiModel(GlobalModel):
     @property
     def in_channel_names(self):
         # TODO: add the input channel names
-        return CHANNELS
+        pass
 
     @property
     def out_channel_names(self):
         # TODO: add the output channel names
-        return CHANNELS
+        pass
 
     def forecast(
             self,
@@ -117,3 +117,9 @@ class FuxiModel(GlobalModel):
         )
 
         return da.sel(channel=channels) if channels else da
+
+    def rollout(self) -> tuple[xr.DataArray, list[str]]:
+        raise NotImplementedError
+
+    def predict_one_step(self) -> xr.DataArray:
+        raise NotImplementedError
