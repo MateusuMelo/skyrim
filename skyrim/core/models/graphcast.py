@@ -27,7 +27,7 @@ CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600
             "u925", "u1000", "v50", "v100", "v150", "v200", "v250", "v300", "v400", "v500",
             "v600", "v700", "v850", "v925", "v1000", "w50", "w100", "w150", "w200", "w250",
             "w300", "w400", "w500", "w600", "w700", "w850", "w925", "w1000", "u10m", "v10m",
-            "t2m", "msl", "tp06",
+            "t2m", "msl","tp06",
             ]
 # fmt: on
 
@@ -95,14 +95,10 @@ class GraphcastModel(GlobalModel):
         global_da.name = None
         return global_da
 
-        except Exception as e:
-            logger.error(f"Error converting to global DataArray: {e}")
-            raise
-
     def _predict_one_step(
-            self,
-            start_time: datetime.datetime,
-            initial_condition: tuple | None = None,
+        self,
+        start_time: datetime.datetime,
+        initial_condition: tuple | None = None,
     ) -> xr.DataArray:
         # TODO: initial condition
         # NOTE: this only supports graphcast operational model
@@ -127,10 +123,6 @@ class GraphcastModel(GlobalModel):
         state, output = self.stepper.step(state)
         logger.debug(f"state[0]: {state[0]}")
         return state
-
-        except Exception as e:
-            logger.error(f"Error in _predict_one_step: {e}")
-            raise
 
     def forecast(
         self,
