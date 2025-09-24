@@ -23,14 +23,14 @@ if torch.cuda.is_available():
 else:
     print("Nenhuma GPU CUDA disponível")
 
+# Configure environment for GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["JAX_PLATFORM_NAME"] = "cuda"
+
 print(f"JAX platform: {jax.lib.xla_bridge.get_backend().platform}")
 print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Não definido')}")
-# Configure environment to force CPU usage
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Disable GPU
-os.environ["JAX_PLATFORM_NAME"] = "cuda"  # Force JAX to use CPU
 
 # fmt: off
-# TODO: check tp06 - this is tisr? https://codes.ecmwf.int/grib/param-db/212
 CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600", "z700",
             "z850", "z925", "z1000", "q50", "q100", "q150", "q200", "q250", "q300", "q400",
             "q500", "q600", "q700", "q850", "q925", "q1000", "t50", "t100", "t150", "t200",
@@ -39,7 +39,7 @@ CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600
             "u925", "u1000", "v50", "v100", "v150", "v200", "v250", "v300", "v400", "v500",
             "v600", "v700", "v850", "v925", "v1000", "w50", "w100", "w150", "w200", "w250",
             "w300", "w400", "w500", "w600", "w700", "w850", "w925", "w1000", "u10m", "v10m",
-            "t2m", "msl","tp06",
+            "t2m", "msl", "tp06",
             ]
 # fmt: on
 
@@ -59,7 +59,6 @@ CHANNEL_MAP = [
 
 
 class GraphcastModel(GlobalModel):
-    # TODO: check rollout implementation
     model_name = "graphcast"
 
     def __init__(self, *args, **kwargs):
@@ -69,6 +68,29 @@ class GraphcastModel(GlobalModel):
         return graphcast.load_time_loop_operational(
             registry.get_model("e2mip://graphcast")
         )
+
+    def _fix_tensor_layout(self, tensor):
+        """
+        Corrige o layout do tensor de (4,0,3,2,1) para (4,3,2,1,0)
+        que é o layout esperado pelo JAX
+        """
+        if tensor.dim() == 5:
+            # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
+            return tensor.permute(0, 1, 3, 4, 2).contiguous()
+        return tensor.contiguous()
+
+    def _fix_initial_condition_layout(self, initial_condition):
+        """
+        Corrige o layout das condições iniciais para compatibilidade JAX
+        """
+        if isinstance(initial_condition, torch.Tensor):
+            return self._fix_tensor_layout(initial_condition)
+        elif isinstance(initial_condition, (tuple, list)):
+            # Assumindo que o tensor está na posição 1 da tupla (baseado no código original)
+            if len(initial_condition) > 1 and isinstance(initial_condition[1], torch.Tensor):
+                fixed_tensor = self._fix_tensor_layout(initial_condition[1])
+                return (initial_condition[0], fixed_tensor) + initial_condition[2:]
+        return initial_condition
 
     @property
     def time_step(self):
@@ -108,14 +130,10 @@ class GraphcastModel(GlobalModel):
         return global_da
 
     def _predict_one_step(
-        self,
-        start_time: datetime.datetime,
-        initial_condition: tuple | None = None,
+            self,
+            start_time: datetime.datetime,
+            initial_condition: tuple | None = None,
     ) -> xr.DataArray:
-        # TODO: initial condition
-        # NOTE: this only supports graphcast operational model
-        # some info about stepper:
-        # https://github.com/NVIDIA/earth2mip/blob/86b11fe4ba2f19641802112e8b0ba6b962123130/earth2mip/time_loop.py#L114-L122
         self.stepper = self.model.stepper
         if initial_condition is None:
             initial_condition = get_initial_condition_for_model(
@@ -124,29 +142,31 @@ class GraphcastModel(GlobalModel):
                 time=start_time,
             )
 
+            # Corrigir layout antes da inicialização
+            initial_condition = self._fix_initial_condition_layout(initial_condition)
+
             state = self.stepper.initialize(initial_condition, start_time)
             logger.debug(f"IC fetched - state[0]: {state[0]}")
-            # state : with lenght 3
-            # state[0] Timestamp('2024-05-01 00:00:00')
-            # state[1] <xarray.Dataset>  time: 2, level: 13, batch: 1, lat: 721, lon: 1440
-            # state[2] Array([0, 0], dtype=uint32)
         else:
+            # Corrigir layout do estado existente
+            initial_condition = self._fix_initial_condition_layout(initial_condition)
             state = initial_condition
+
         state, output = self.stepper.step(state)
         logger.debug(f"state[0]: {state[0]}")
         return state
 
     def forecast(
-        self,
-        start_time: datetime.datetime,
-        n_steps: int = 4,
-        channels: List[str] = [],
+            self,
+            start_time: datetime.datetime,
+            n_steps: int = 4,
+            channels: List[str] = [],
     ) -> xr.DataArray:
         times = [start_time + i * self.time_step for i in range(n_steps + 1)]
         state, das = None, []
         for n in range(n_steps):
             state = self._predict_one_step(start_time, initial_condition=state)
-            logger.success(f"Forecast step {n+1}/{n_steps} completed")
+            logger.success(f"Forecast step {n + 1}/{n_steps} completed")
             da = self._to_global_da(
                 state[1] if n == 0 else state[1].isel(time=-1).expand_dims("time")
             )
@@ -154,20 +174,15 @@ class GraphcastModel(GlobalModel):
                 da = da.sel(channel=channels)
             da = da.sel(lat=da.lat[::-1])
             das.append(da)
-        # re-set the time coords: as graphcast by default holds delta_t's
-        # prediction, i.e. current state, timestamp value is hold at state[0]
         return xr.concat(das, dim="time").assign_coords(time=times)
 
     def rollout(
-        self,
-        start_time: datetime.datetime,
-        n_steps: int = 3,
-        save: bool = True,
-        save_config: dict = {},
+            self,
+            start_time: datetime.datetime,
+            n_steps: int = 3,
+            save: bool = True,
+            save_config: dict = {},
     ) -> tuple[xr.DataArray, list[str]]:
-        # it does not make sense to keep all the results in the memory
-        # return final pred and list of paths of the saved predictions
-        # TODO: add functionality to rollout from a given initial condition
         times = [start_time + i * self.time_step for i in range(n_steps + 1)]
 
         pred, output_paths, source = None, [], self.ic_source
@@ -189,6 +204,5 @@ class GraphcastModel(GlobalModel):
                 )
                 output_paths.append(output_path)
             start_time, source = pred_time, "file"
-            logger.success(f"Rollout step {n+1}/{n_steps} completed")
-        # re-set the time coords: as graphcast by default holds delta_t's
+            logger.success(f"Rollout step {n + 1}/{n_steps} completed")
         return self._to_global_da(pred[1]).assign_coords(time=times[-2:]), output_paths
