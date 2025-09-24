@@ -12,7 +12,19 @@ from loguru import logger
 from .base import GlobalModel
 import os
 import torch
+import jax
 
+print("=== DEBUG: Verificando ambiente CUDA ===")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"CUDA device count: {torch.cuda.device_count()}")
+if torch.cuda.is_available():
+    for i in range(torch.cuda.device_count()):
+        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+else:
+    print("Nenhuma GPU CUDA disponível")
+
+print(f"JAX platform: {jax.lib.xla_bridge.get_backend().platform}")
+print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Não definido')}")
 # Configure environment to force CPU usage
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
 os.environ["JAX_PLATFORM_NAME"] = "cpu"  # Force JAX to use CPU
