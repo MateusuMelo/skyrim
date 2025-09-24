@@ -35,17 +35,18 @@ import earth2mip.networks.graphcast as graphcast_module
 
 
 def fixed_torch_to_jax(x):
-    """Versão alternativa usando jnp.array"""
+    """Versão corrigida de torch_to_jax que preserva o layout original"""
     print(f"=== DEBUG: Tensor shape original: {x.shape}")
+
+    # NÃO reordenar as dimensões - manter o layout original do GraphCast
+    # O modelo espera: [batch, time, channels, lat, lon]
+    # O JAX pode lidar com este layout diretamente
 
     # Converter para numpy primeiro, depois para JAX
     numpy_array = x.cpu().numpy()
 
-    # Corrigir o layout se necessário
-    if x.dim() == 5:
-        # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
-        numpy_array = numpy_array.transpose(0, 1, 3, 4, 2)
-
+    # Manter o layout original: [batch, time, channels, lat, lon]
+    # NÃO fazer transpose
     jax_array = jnp.array(numpy_array)
     print(f"=== DEBUG: Conversão via numpy bem-sucedida, shape: {jax_array.shape}")
     return jax_array
@@ -90,9 +91,14 @@ class GraphcastModel(GlobalModel):
         super().__init__(self.model_name, *args, **kwargs)
 
     def build_model(self):
-        return graphcast.load_time_loop_operational(
+        model = graphcast.load_time_loop_operational(
             registry.get_model("e2mip://graphcast")
         )
+        print(f"=== DEBUG: Model input channels: {model.in_channel_names}")
+        print(f"=== DEBUG: Number of input channels: {len(model.in_channel_names)}")
+        print(f"=== DEBUG: Model output channels: {model.out_channel_names}")
+        print(f"=== DEBUG: Number of output channels: {len(model.out_channel_names)}")
+        return model
 
     @property
     def time_step(self):
@@ -147,8 +153,17 @@ class GraphcastModel(GlobalModel):
             )
 
             print(f"=== DEBUG: Tipo da condição inicial: {type(initial_condition)}")
-            if hasattr(initial_condition, 'shape'):
-                print(f"=== DEBUG: Shape da condição inicial: {initial_condition.shape}")
+            print(f"=== DEBUG: Shape da condição inicial: {initial_condition.shape}")
+            print(f"=== DEBUG: Número de canais: {initial_condition.shape[2]}")
+
+            # Verificar se os canais correspondem ao que o modelo espera
+            expected_channels = len(self.model.in_channel_names)
+            actual_channels = initial_condition.shape[2]
+            print(f"=== DEBUG: Canais esperados: {expected_channels}, Canais obtidos: {actual_channels}")
+
+            if expected_channels != actual_channels:
+                print(f"=== DEBUG: AVISO! Número de canais incompatível!")
+                print(f"=== DEBUG: Canais esperados: {self.model.in_channel_names}")
 
             print("=== DEBUG: Inicializando stepper...")
             state = self.stepper.initialize(initial_condition, start_time)
