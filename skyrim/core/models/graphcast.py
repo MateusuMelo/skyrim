@@ -36,20 +36,30 @@ import earth2mip.networks.graphcast as graphcast_module
 
 def fixed_torch_to_jax(x):
     """Versão corrigida de torch_to_jax que lida com layouts não padrão"""
+    print(f"=== DEBUG: Tensor shape original: {x.shape}, dim: {x.dim()}")
+
     # Corrigir o layout antes da conversão
     if x.dim() == 5:
-        # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
-        # O layout esperado pelo JAX é (4,3,2,1,0) que corresponde a (batch, time, lat, lon, level)
+        # O JAX espera layout (batch, time, lat, lon, level) = (4,3,2,1,0)
+        # Se o tensor original é (batch, time, level, lat, lon) = (4,3,1,2,0)
+        # Precisamos reordenar para (batch, time, lat, lon, level) = (4,3,2,1,0)
         x = x.permute(0, 1, 3, 4, 2).contiguous()
+        print(f"=== DEBUG: Tensor shape após permute: {x.shape}")
 
-    # Garantir que o tensor está na ordem de memória padrão (C-contiguous)
-    x = x.contiguous()
+    # Verificar a contiguidade da memória
+    if not x.is_contiguous():
+        x = x.contiguous()
+        print("=== DEBUG: Tensor foi tornado contiguous")
 
     # Converter para DLPack e depois para JAX
-    dlpack = torch.utils.dlpack.to_dlpack(x)
-    jax_array = jax.dlpack.from_dlpack(dlpack)
-
-    return jax_array
+    try:
+        dlpack = torch.utils.dlpack.to_dlpack(x)
+        jax_array = jax.dlpack.from_dlpack(dlpack)
+        print("=== DEBUG: Conversão para JAX bem-sucedida")
+        return jax_array
+    except Exception as e:
+        print(f"=== DEBUG: Erro na conversão: {e}")
+        raise
 
 
 # Aplicar o monkey patch
