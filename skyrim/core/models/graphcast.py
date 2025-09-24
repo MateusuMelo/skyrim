@@ -26,8 +26,8 @@ else:
 print(f"JAX platform: {jax.lib.xla_bridge.get_backend().platform}")
 print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Não definido')}")
 # Configure environment to force CPU usage
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
-os.environ["JAX_PLATFORM_NAME"] = "cpu"  # Force JAX to use CPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Disable GPU
+os.environ["JAX_PLATFORM_NAME"] = "cuda"  # Force JAX to use CPU
 
 # fmt: off
 # TODO: check tp06 - this is tisr? https://codes.ecmwf.int/grib/param-db/212
