@@ -39,8 +39,17 @@ def fixed_torch_to_jax(x):
     # Corrigir o layout antes da conversão
     if x.dim() == 5:
         # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
+        # O layout esperado pelo JAX é (4,3,2,1,0) que corresponde a (batch, time, lat, lon, level)
         x = x.permute(0, 1, 3, 4, 2).contiguous()
-    return jax.dlpack.from_dlpack(torch.utils.dlpack.to_dlpack(x))
+
+    # Garantir que o tensor está na ordem de memória padrão (C-contiguous)
+    x = x.contiguous()
+
+    # Converter para DLPack e depois para JAX
+    dlpack = torch.utils.dlpack.to_dlpack(x)
+    jax_array = jax.dlpack.from_dlpack(dlpack)
+
+    return jax_array
 
 
 # Aplicar o monkey patch
