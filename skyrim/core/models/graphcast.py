@@ -35,31 +35,20 @@ import earth2mip.networks.graphcast as graphcast_module
 
 
 def fixed_torch_to_jax(x):
-    """Versão corrigida de torch_to_jax que lida com layouts não padrão"""
-    print(f"=== DEBUG: Tensor shape original: {x.shape}, dim: {x.dim()}")
+    """Versão alternativa usando jnp.array"""
+    print(f"=== DEBUG: Tensor shape original: {x.shape}")
 
-    # Corrigir o layout antes da conversão
+    # Converter para numpy primeiro, depois para JAX
+    numpy_array = x.cpu().numpy()
+
+    # Corrigir o layout se necessário
     if x.dim() == 5:
-        # O JAX espera layout (batch, time, lat, lon, level) = (4,3,2,1,0)
-        # Se o tensor original é (batch, time, level, lat, lon) = (4,3,1,2,0)
-        # Precisamos reordenar para (batch, time, lat, lon, level) = (4,3,2,1,0)
-        x = x.permute(0, 1, 3, 4, 2).contiguous()
-        print(f"=== DEBUG: Tensor shape após permute: {x.shape}")
+        # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
+        numpy_array = numpy_array.transpose(0, 1, 3, 4, 2)
 
-    # Verificar a contiguidade da memória
-    if not x.is_contiguous():
-        x = x.contiguous()
-        print("=== DEBUG: Tensor foi tornado contiguous")
-
-    # Converter para DLPack e depois para JAX
-    try:
-        dlpack = torch.utils.dlpack.to_dlpack(x)
-        jax_array = jax.dlpack.from_dlpack(dlpack)
-        print("=== DEBUG: Conversão para JAX bem-sucedida")
-        return jax_array
-    except Exception as e:
-        print(f"=== DEBUG: Erro na conversão: {e}")
-        raise
+    jax_array = jnp.array(numpy_array)
+    print(f"=== DEBUG: Conversão via numpy bem-sucedida, shape: {jax_array.shape}")
+    return jax_array
 
 
 # Aplicar o monkey patch
@@ -148,18 +137,26 @@ class GraphcastModel(GlobalModel):
             initial_condition: tuple | None = None,
     ) -> xr.DataArray:
         self.stepper = self.model.stepper
+
         if initial_condition is None:
+            print(f"=== DEBUG: Obtendo condições iniciais para {start_time}")
             initial_condition = get_initial_condition_for_model(
                 time_loop=self.model,
                 data_source=self.data_source,
                 time=start_time,
             )
 
+            print(f"=== DEBUG: Tipo da condição inicial: {type(initial_condition)}")
+            if hasattr(initial_condition, 'shape'):
+                print(f"=== DEBUG: Shape da condição inicial: {initial_condition.shape}")
+
+            print("=== DEBUG: Inicializando stepper...")
             state = self.stepper.initialize(initial_condition, start_time)
             logger.debug(f"IC fetched - state[0]: {state[0]}")
         else:
             state = initial_condition
 
+        print("=== DEBUG: Executando step...")
         state, output = self.stepper.step(state)
         logger.debug(f"state[0]: {state[0]}")
         return state
