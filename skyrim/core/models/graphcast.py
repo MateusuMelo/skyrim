@@ -30,6 +30,23 @@ os.environ["JAX_PLATFORM_NAME"] = "cuda"
 print(f"JAX platform: {jax.lib.xla_bridge.get_backend().platform}")
 print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Não definido')}")
 
+# MONKEY PATCH: Corrigir a função torch_to_jax do earth2mip
+import earth2mip.networks.graphcast as graphcast_module
+
+
+def fixed_torch_to_jax(x):
+    """Versão corrigida de torch_to_jax que lida com layouts não padrão"""
+    # Corrigir o layout antes da conversão
+    if x.dim() == 5:
+        # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
+        x = x.permute(0, 1, 3, 4, 2).contiguous()
+    return jax.dlpack.from_dlpack(torch.utils.dlpack.to_dlpack(x))
+
+
+# Aplicar o monkey patch
+graphcast_module.torch_to_jax = fixed_torch_to_jax
+print("=== Monkey patch aplicado para torch_to_jax ===")
+
 # fmt: off
 CHANNELS = ["z50", "z100", "z150", "z200", "z250", "z300", "z400", "z500", "z600", "z700",
             "z850", "z925", "z1000", "q50", "q100", "q150", "q200", "q250", "q300", "q400",
@@ -68,29 +85,6 @@ class GraphcastModel(GlobalModel):
         return graphcast.load_time_loop_operational(
             registry.get_model("e2mip://graphcast")
         )
-
-    def _fix_tensor_layout(self, tensor):
-        """
-        Corrige o layout do tensor de (4,0,3,2,1) para (4,3,2,1,0)
-        que é o layout esperado pelo JAX
-        """
-        if tensor.dim() == 5:
-            # Reordenar de (batch, time, level, lat, lon) para (batch, time, lat, lon, level)
-            return tensor.permute(0, 1, 3, 4, 2).contiguous()
-        return tensor.contiguous()
-
-    def _fix_initial_condition_layout(self, initial_condition):
-        """
-        Corrige o layout das condições iniciais para compatibilidade JAX
-        """
-        if isinstance(initial_condition, torch.Tensor):
-            return self._fix_tensor_layout(initial_condition)
-        elif isinstance(initial_condition, (tuple, list)):
-            # Assumindo que o tensor está na posição 1 da tupla (baseado no código original)
-            if len(initial_condition) > 1 and isinstance(initial_condition[1], torch.Tensor):
-                fixed_tensor = self._fix_tensor_layout(initial_condition[1])
-                return (initial_condition[0], fixed_tensor) + initial_condition[2:]
-        return initial_condition
 
     @property
     def time_step(self):
@@ -142,14 +136,9 @@ class GraphcastModel(GlobalModel):
                 time=start_time,
             )
 
-            # Corrigir layout antes da inicialização
-            initial_condition = self._fix_initial_condition_layout(initial_condition)
-
             state = self.stepper.initialize(initial_condition, start_time)
             logger.debug(f"IC fetched - state[0]: {state[0]}")
         else:
-            # Corrigir layout do estado existente
-            initial_condition = self._fix_initial_condition_layout(initial_condition)
             state = initial_condition
 
         state, output = self.stepper.step(state)
